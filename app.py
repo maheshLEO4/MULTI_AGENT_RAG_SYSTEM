@@ -1,10 +1,14 @@
 import os
 import streamlit as st
+
 from ingest import ingest_pdfs
 from retriever import LlamaIndexHybridRetriever
 from agents.workflow import AgentWorkflow
 from config import UPLOAD_DIR, INDEX_DIR
 
+# -------------------------
+# Streamlit Page Setup
+# -------------------------
 st.set_page_config(page_title="Multi-Agentic RAG", layout="wide")
 st.title("📚 Multi-Agentic RAG Chatbot")
 
@@ -15,63 +19,61 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 # -------------------------
-# Cached Retriever
-# -------------------------
-@st.cache_resource(show_spinner=False)
-def get_retriever():
-    return LlamaIndexHybridRetriever()
-
-# -------------------------
-# Upload PDFs
+# PDF Upload
 # -------------------------
 uploaded_files = st.file_uploader(
-    "Upload PDFs",
+    "Upload PDF documents",
     type=["pdf"],
     accept_multiple_files=True
 )
 
 if uploaded_files:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
     for file in uploaded_files:
-        with open(os.path.join(UPLOAD_DIR, file.name), "wb") as f:
+        path = os.path.join(UPLOAD_DIR, file.name)
+        with open(path, "wb") as f:
             f.write(file.getbuffer())
 
-    with st.spinner("Indexing documents..."):
+    with st.spinner("Indexing PDFs..."):
         ingest_pdfs()
 
-    st.success("✅ PDFs indexed successfully")
+    st.success("✅ PDFs indexed successfully!")
 
 # -------------------------
-# Chat UI
+# Chat History Display
 # -------------------------
 for msg in st.session_state.chat_history:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    st.chat_message("user").write(msg["user"])
+    st.chat_message("assistant").write(msg["assistant"])
 
-question = st.chat_input("Ask a question about the PDFs")
+# -------------------------
+# Chat Input
+# -------------------------
+question = st.chat_input("Ask a question about the uploaded PDFs")
 
 if question:
-    st.session_state.chat_history.append(
-        {"role": "user", "content": question}
-    )
-
+    # Safety check
     if not os.path.exists(INDEX_DIR) or not os.listdir(INDEX_DIR):
-        st.warning("Please upload PDFs first.")
+        st.warning("⚠️ Upload and index PDFs first.")
         st.stop()
 
-    retriever = get_retriever()
+    retriever = LlamaIndexHybridRetriever()
+    workflow = AgentWorkflow()
 
-    with st.spinner("Thinking..."):
-        workflow = AgentWorkflow()
-        result = workflow.full_pipeline(
-            question=question,
-            retriever=retriever,
-            chat_history=st.session_state.chat_history
-        )
-
-    answer = result["draft_answer"]
-
-    st.session_state.chat_history.append(
-        {"role": "assistant", "content": answer}
+    # 🔥 FIX: positional arguments ONLY
+    result = workflow.full_pipeline(
+        question,
+        retriever,
+        st.session_state.chat_history
     )
 
-    st.rerun()
+    # Save chat
+    st.session_state.chat_history.append({
+        "user": question,
+        "assistant": result["draft_answer"]
+    })
+
+    # Display
+    st.chat_message("user").write(question)
+    st.chat_message("assistant").write(result["draft_answer"])
