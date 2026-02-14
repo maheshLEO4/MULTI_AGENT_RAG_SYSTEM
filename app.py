@@ -39,27 +39,63 @@ if "retriever" not in st.session_state:
 # -------------------------
 # PDF Upload Section
 # -------------------------
+st.markdown("### 📄 Upload Documents")
+st.info("💡 **Tip**: For large PDFs (>50MB or >200 pages), consider splitting them into smaller files for faster processing.")
+
 uploaded_files = st.file_uploader(
     "Upload PDF documents",
     type=["pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    help="Upload one or more PDF files. Large files will be processed in batches."
 )
 
 if uploaded_files:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-
+    
+    # Calculate total size
+    total_size_mb = sum(file.size for file in uploaded_files) / (1024 * 1024)
+    
+    # Show warning for large files
+    if total_size_mb > 50:
+        st.warning(f"⚠️ Large upload detected ({total_size_mb:.1f} MB). Indexing may take 2-5 minutes.")
+    
+    # Save files
     for file in uploaded_files:
         file_path = os.path.join(UPLOAD_DIR, file.name)
+        file_size_mb = file.size / (1024 * 1024)
+        
+        # Individual file size warning
+        if file_size_mb > 100:
+            st.warning(f"⚠️ {file.name} is very large ({file_size_mb:.1f} MB). Consider splitting it.")
+        
         with open(file_path, "wb") as f:
             f.write(file.getbuffer())
 
-    with st.spinner("Indexing PDFs..."):
-        ingest_pdfs()
+    # Progress bar for indexing
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     
-    # Reset retriever cache after new upload
-    st.session_state.retriever = None
-
-    st.success("✅ PDFs indexed successfully!")
+    def update_progress(progress, message):
+        progress_bar.progress(progress)
+        status_text.text(message)
+    
+    try:
+        ingest_pdfs(progress_callback=update_progress)
+        
+        # Reset retriever cache after new upload
+        st.session_state.retriever = None
+        
+        progress_bar.empty()
+        status_text.empty()
+        st.success("✅ PDFs indexed successfully!")
+    except MemoryError:
+        progress_bar.empty()
+        status_text.empty()
+        st.error("❌ File too large! Try splitting the PDF into smaller parts (< 100 pages each).")
+    except Exception as e:
+        progress_bar.empty()
+        status_text.empty()
+        st.error(f"❌ Error indexing PDFs: {str(e)}")
 
 # -------------------------
 # Chat History Display (SAFE)
