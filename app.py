@@ -36,6 +36,12 @@ if "chat_history" not in st.session_state:
 if "retriever" not in st.session_state:
     st.session_state.retriever = None
 
+if "files_indexed" not in st.session_state:
+    st.session_state.files_indexed = False
+
+if "uploaded_file_names" not in st.session_state:
+    st.session_state.uploaded_file_names = set()
+
 # -------------------------
 # PDF Upload Section
 # -------------------------
@@ -50,52 +56,78 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    # Get current file names
+    current_files = {file.name for file in uploaded_files}
     
-    # Calculate total size
-    total_size_mb = sum(file.size for file in uploaded_files) / (1024 * 1024)
+    # Check if files have changed
+    files_changed = current_files != st.session_state.uploaded_file_names
     
-    # Show warning for large files
-    if total_size_mb > 50:
-        st.warning(f"⚠️ Large upload detected ({total_size_mb:.1f} MB). Indexing may take 2-5 minutes.")
+    if files_changed:
+        st.session_state.files_indexed = False
+        st.session_state.uploaded_file_names = current_files
     
-    # Save files
-    for file in uploaded_files:
-        file_path = os.path.join(UPLOAD_DIR, file.name)
-        file_size_mb = file.size / (1024 * 1024)
+    # Show index button only if files haven't been indexed yet
+    if not st.session_state.files_indexed:
+        # Calculate total size
+        total_size_mb = sum(file.size for file in uploaded_files) / (1024 * 1024)
         
-        # Individual file size warning
-        if file_size_mb > 100:
-            st.warning(f"⚠️ {file.name} is very large ({file_size_mb:.1f} MB). Consider splitting it.")
+        # Show warning for large files
+        if total_size_mb > 50:
+            st.warning(f"⚠️ Large upload detected ({total_size_mb:.1f} MB). Indexing may take 2-5 minutes.")
         
-        with open(file_path, "wb") as f:
-            f.write(file.getbuffer())
-
-    # Progress bar for indexing
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    def update_progress(progress, message):
-        progress_bar.progress(progress)
-        status_text.text(message)
-    
-    try:
-        ingest_pdfs(progress_callback=update_progress)
+        # Individual file size warnings
+        for file in uploaded_files:
+            file_size_mb = file.size / (1024 * 1024)
+            if file_size_mb > 100:
+                st.warning(f"⚠️ {file.name} is very large ({file_size_mb:.1f} MB). Consider splitting it.")
         
-        # Reset retriever cache after new upload
-        st.session_state.retriever = None
+        # Add button to start indexing
+        if st.button("📑 Index PDFs", type="primary", use_container_width=True):
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            
+            # Save files
+            for file in uploaded_files:
+                file_path = os.path.join(UPLOAD_DIR, file.name)
+                with open(file_path, "wb") as f:
+                    f.write(file.getbuffer())
+            
+            # Progress bar for indexing
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            def update_progress(progress, message):
+                progress_bar.progress(progress)
+                status_text.text(message)
+            
+            try:
+                ingest_pdfs(progress_callback=update_progress)
+                
+                # Reset retriever cache after new upload
+                st.session_state.retriever = None
+                st.session_state.files_indexed = True
+                
+                progress_bar.empty()
+                status_text.empty()
+                st.success("✅ PDFs indexed successfully! You can now ask questions.")
+                st.rerun()
+            except MemoryError:
+                progress_bar.empty()
+                status_text.empty()
+                st.error("❌ File too large! Try splitting the PDF into smaller parts (< 100 pages each).")
+                st.session_state.files_indexed = False
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                st.error(f"❌ Error indexing PDFs: {str(e)}")
+                st.session_state.files_indexed = False
+    else:
+        # Files already indexed
+        st.success(f"✅ {len(uploaded_files)} file(s) already indexed. You can ask questions below.")
         
-        progress_bar.empty()
-        status_text.empty()
-        st.success("✅ PDFs indexed successfully!")
-    except MemoryError:
-        progress_bar.empty()
-        status_text.empty()
-        st.error("❌ File too large! Try splitting the PDF into smaller parts (< 100 pages each).")
-    except Exception as e:
-        progress_bar.empty()
-        status_text.empty()
-        st.error(f"❌ Error indexing PDFs: {str(e)}")
+        # Add button to re-index if needed
+        if st.button("🔄 Re-index PDFs", help="Click to re-process the uploaded files"):
+            st.session_state.files_indexed = False
+            st.rerun()
 
 # -------------------------
 # Chat History Display (SAFE)
