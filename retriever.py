@@ -1,6 +1,7 @@
 import os
 from llama_index.core import StorageContext, load_index_from_storage
-from llama_index.core.retrievers import VectorIndexRetriever, BM25Retriever
+from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core.retrievers.bm25 import BM25Retriever
 from llama_index.core.retrievers.fusion_retriever import QueryFusionRetriever
 from langchain_core.documents import Document
 from config import INDEX_DIR, TOP_K
