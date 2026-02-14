@@ -20,7 +20,8 @@ class AgentState(TypedDict):
     draft_answer: str
     verification_report: str
     is_relevant: bool
-    retriever: Any  # 🔥 Custom hybrid retriever
+    retriever: Any  # Custom hybrid retriever
+    iteration_count: int  # Track iterations to prevent infinite loops
 
 
 # ---------------------------
@@ -76,11 +77,18 @@ class AgentWorkflow:
 
         logger.info("Checking question relevance")
 
-        classification = self.relevance_checker.check(
-            question=question,
-            retriever=retriever,
-            k=20
-        )
+        try:
+            classification = self.relevance_checker.check(
+                question=question,
+                retriever=retriever,
+                k=20
+            )
+        except Exception as e:
+            logger.error(f"Error in relevance checking: {e}")
+            return {
+                "is_relevant": False,
+                "draft_answer": "❌ An error occurred while checking relevance. Please try again."
+            }
 
         if classification in ("CAN_ANSWER", "PARTIAL"):
             return {"is_relevant": True}
@@ -105,8 +113,15 @@ class AgentWorkflow:
         try:
             logger.info(f"Starting workflow for question: {question}")
 
-            # 🔥 Always use invoke() (LangChain standard)
-            documents = retriever.invoke(question)
+            # Use invoke() to retrieve documents
+            try:
+                documents = retriever.invoke(question)
+            except Exception as e:
+                logger.error(f"Error retrieving documents: {e}")
+                return {
+                    "draft_answer": "❌ An error occurred while retrieving documents. Please ensure PDFs are properly indexed.",
+                    "verification_report": ""
+                }
 
             logger.info(f"Retrieved {len(documents)} documents")
 
@@ -116,10 +131,18 @@ class AgentWorkflow:
                 "draft_answer": "",
                 "verification_report": "",
                 "is_relevant": False,
-                "retriever": retriever
+                "retriever": retriever,
+                "iteration_count": 0
             }
 
-            final_state = self.compiled_workflow.invoke(initial_state)
+            try:
+                final_state = self.compiled_workflow.invoke(initial_state)
+            except Exception as e:
+                logger.error(f"Error in workflow execution: {e}")
+                return {
+                    "draft_answer": "❌ An error occurred during the workflow execution. Please try again.",
+                    "verification_report": ""
+                }
 
             return {
                 "draft_answer": final_state.get("draft_answer", ""),
@@ -128,7 +151,10 @@ class AgentWorkflow:
 
         except Exception as e:
             logger.exception("❌ Workflow execution failed")
-            raise RuntimeError(f"Workflow failed: {e}")
+            return {
+                "draft_answer": f"❌ An unexpected error occurred: {str(e)}",
+                "verification_report": ""
+            }
 
     # ---------------------------
     # Research Step
@@ -136,13 +162,23 @@ class AgentWorkflow:
     def _research_step(self, state: AgentState) -> Dict:
         logger.info("Running research agent")
 
-        result = self.researcher.generate(
-            question=state["question"],
-            documents=state["documents"]
-        )
+        try:
+            result = self.researcher.generate(
+                question=state["question"],
+                documents=state["documents"]
+            )
+        except Exception as e:
+            logger.error(f"Error in research step: {e}")
+            return {
+                "draft_answer": "❌ An error occurred while generating the answer."
+            }
+
+        # Increment iteration count
+        iteration_count = state.get("iteration_count", 0) + 1
 
         return {
-            "draft_answer": result.get("draft_answer", "")
+            "draft_answer": result.get("draft_answer", ""),
+            "iteration_count": iteration_count
         }
 
     # ---------------------------
@@ -151,10 +187,16 @@ class AgentWorkflow:
     def _verification_step(self, state: AgentState) -> Dict:
         logger.info("Running verification agent")
 
-        result = self.verifier.check(
-            answer=state["draft_answer"],
-            documents=state["documents"]
-        )
+        try:
+            result = self.verifier.check(
+                answer=state["draft_answer"],
+                documents=state["documents"]
+            )
+        except Exception as e:
+            logger.error(f"Error in verification step: {e}")
+            return {
+                "verification_report": "❌ An error occurred during verification."
+            }
 
         return {
             "verification_report": result.get("verification_report", "")
@@ -165,7 +207,14 @@ class AgentWorkflow:
     # ---------------------------
     def _decide_next_step(self, state: AgentState) -> str:
         report = state.get("verification_report", "")
+        iteration_count = state.get("iteration_count", 0)
+        
+        # Prevent infinite loops - max 2 iterations
+        if iteration_count >= 2:
+            logger.info("Maximum iterations reached → ending workflow")
+            return "end"
 
+        # Check if verification failed
         if "Supported: NO" in report or "Relevant: NO" in report:
             logger.info("Verification failed → re-running research")
             return "re_research"

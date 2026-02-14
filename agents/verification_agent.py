@@ -9,11 +9,15 @@ class VerificationAgent:
         Initialize the verification agent with Groq LLM.
         """
         print("Initializing VerificationAgent with Groq LLM...")
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY environment variable is not set")
+        
         self.llm = ChatGroq(
             model_name="llama-3.1-8b-instant",
             temperature=0.0,
             max_tokens=200,
-            groq_api_key=os.getenv("GROQ_API_KEY"),
+            groq_api_key=api_key,
         )
         print("LLM initialized successfully.")
 
@@ -65,31 +69,43 @@ class VerificationAgent:
             for line in lines:
                 if ':' in line:
                     key, value = line.split(':', 1)
-                    key = key.strip().capitalize()
+                    key = key.strip()
                     value = value.strip()
-                    if key in {"Supported", "Unsupported claims", "Contradictions", "Relevant", "Additional details"}:
-                        if key in {"Unsupported claims", "Contradictions"}:
-                            # Convert string list to actual list
-                            if value.startswith('[') and value.endswith(']'):
-                                items = value[1:-1].split(',')
-                                # Remove any surrounding quotes and whitespace
-                                items = [item.strip().strip('"').strip("'") for item in items if item.strip()]
-                                verification[key] = items
-                            else:
-                                verification[key] = []
-                        elif key == "Additional details":
-                            verification[key] = value
+                    
+                    # Normalize key names
+                    key_lower = key.lower()
+                    if "supported" in key_lower and "unsupported" not in key_lower:
+                        verification["Supported"] = value.upper()
+                    elif "unsupported" in key_lower:
+                        if value.startswith('[') and value.endswith(']'):
+                            items = value[1:-1].split(',')
+                            items = [item.strip().strip('"').strip("'") for item in items if item.strip()]
+                            verification["Unsupported Claims"] = items
                         else:
-                            verification[key] = value.upper()
+                            verification["Unsupported Claims"] = []
+                    elif "contradiction" in key_lower:
+                        if value.startswith('[') and value.endswith(']'):
+                            items = value[1:-1].split(',')
+                            items = [item.strip().strip('"').strip("'") for item in items if item.strip()]
+                            verification["Contradictions"] = items
+                        else:
+                            verification["Contradictions"] = []
+                    elif "relevant" in key_lower:
+                        verification["Relevant"] = value.upper()
+                    elif "additional" in key_lower or "details" in key_lower:
+                        verification["Additional Details"] = value
+            
             # Ensure all keys are present
-            for key in ["Supported", "Unsupported Claims", "Contradictions", "Relevant", "Additional Details"]:
-                if key not in verification:
-                    if key in {"Unsupported Claims", "Contradictions"}:
-                        verification[key] = []
-                    elif key == "Additional Details":
-                        verification[key] = ""
-                    else:
-                        verification[key] = "NO"
+            if "Supported" not in verification:
+                verification["Supported"] = "NO"
+            if "Unsupported Claims" not in verification:
+                verification["Unsupported Claims"] = []
+            if "Contradictions" not in verification:
+                verification["Contradictions"] = []
+            if "Relevant" not in verification:
+                verification["Relevant"] = "NO"
+            if "Additional Details" not in verification:
+                verification["Additional Details"] = ""
 
             return verification
         except Exception as e:
@@ -132,6 +148,21 @@ class VerificationAgent:
         """
         print(f"VerificationAgent.check called with answer='{answer}' and {len(documents)} documents.")
 
+        if not documents:
+            print("No documents provided for verification.")
+            verification_report = {
+                "Supported": "NO",
+                "Unsupported Claims": [],
+                "Contradictions": [],
+                "Relevant": "NO",
+                "Additional Details": "No documents available for verification."
+            }
+            verification_report_formatted = self.format_verification_report(verification_report)
+            return {
+                "verification_report": verification_report_formatted,
+                "context_used": ""
+            }
+
         # Combine all document contents into one string without truncation
         context = "\n\n".join([doc.page_content for doc in documents])
         print(f"Combined context length: {len(context)} characters.")
@@ -147,7 +178,18 @@ class VerificationAgent:
             print("LLM response received.")
         except Exception as e:
             print(f"Error during model inference: {e}")
-            raise RuntimeError("Failed to verify answer due to a model error.") from e
+            verification_report = {
+                "Supported": "NO",
+                "Unsupported Claims": [],
+                "Contradictions": [],
+                "Relevant": "NO",
+                "Additional Details": f"Model error: {str(e)}"
+            }
+            verification_report_formatted = self.format_verification_report(verification_report)
+            return {
+                "verification_report": verification_report_formatted,
+                "context_used": context
+            }
 
         # Extract and process the LLM's response
         try:

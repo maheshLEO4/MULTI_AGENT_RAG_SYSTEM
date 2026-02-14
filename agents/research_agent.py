@@ -9,10 +9,14 @@ class ResearchAgent:
         Initialize the research agent with Groq LLM.
         """
         print("Initializing ResearchAgent with Groq LLM...")
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY environment variable is not set")
+        
         self.llm = ChatGroq(
             model_name="llama-3.1-8b-instant",
             temperature=0.1,
-            groq_api_key=os.getenv("GROQ_API_KEY"),
+            groq_api_key=api_key,
         )
         print("LLM initialized successfully.")
 
@@ -51,6 +55,13 @@ class ResearchAgent:
         """
         print(f"ResearchAgent.generate called with question='{question}' and {len(documents)} documents.")
 
+        if not documents:
+            print("No documents provided to generate an answer.")
+            return {
+                "draft_answer": "Sorry, I don't have any information about your question.",
+                "context_used": ""
+            }
+
         # Combine the top document contents into one string
         context = "\n\n".join([doc.page_content for doc in documents])
         print(f"Combined context length: {len(context)} characters.")
@@ -66,7 +77,10 @@ class ResearchAgent:
             print("LLM response received.")
         except Exception as e:
             print(f"Error during model inference: {e}")
-            raise RuntimeError("Failed to generate answer due to a model error.") from e
+            return {
+                "draft_answer": "Sorry, I encountered an error while generating the answer.",
+                "context_used": context
+            }
 
         # Extract and process the LLM's response
         draft_answer = self.sanitize_response(response.content) if response.content else "I cannot answer this question."

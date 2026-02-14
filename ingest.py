@@ -10,29 +10,46 @@ from config import UPLOAD_DIR, INDEX_DIR, EMBED_MODEL
 
 
 def ingest_pdfs():
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    os.makedirs(INDEX_DIR, exist_ok=True)
+    """
+    Ingest PDF documents from UPLOAD_DIR and create a vector store index.
+    """
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        os.makedirs(INDEX_DIR, exist_ok=True)
 
-    # 🔒 Disable OpenAI completely
-    Settings.llm = None
-    Settings.embed_model = HuggingFaceEmbedding(
-        model_name=EMBED_MODEL
-    )
+        # Disable OpenAI completely
+        Settings.llm = None
+        Settings.embed_model = HuggingFaceEmbedding(
+            model_name=EMBED_MODEL
+        )
 
-    docs = SimpleDirectoryReader(
-        UPLOAD_DIR,
-        required_exts=[".pdf"]
-    ).load_data()
+        # Load documents
+        docs = SimpleDirectoryReader(
+            UPLOAD_DIR,
+            required_exts=[".pdf"]
+        ).load_data()
 
-    if not docs:
-        return
+        if not docs:
+            print("No PDF documents found in upload directory.")
+            return
 
-    splitter = SentenceSplitter(
-        chunk_size=512,
-        chunk_overlap=50
-    )
+        print(f"Loaded {len(docs)} documents.")
 
-    nodes = splitter.get_nodes_from_documents(docs)
+        # Split documents into chunks
+        splitter = SentenceSplitter(
+            chunk_size=512,
+            chunk_overlap=50
+        )
 
-    index = VectorStoreIndex(nodes)
-    index.storage_context.persist(persist_dir=INDEX_DIR)
+        nodes = splitter.get_nodes_from_documents(docs)
+        print(f"Created {len(nodes)} chunks.")
+
+        # Create index
+        index = VectorStoreIndex(nodes)
+        index.storage_context.persist(persist_dir=INDEX_DIR)
+        
+        print(f"Index successfully created and persisted to {INDEX_DIR}")
+    
+    except Exception as e:
+        print(f"Error during PDF ingestion: {e}")
+        raise

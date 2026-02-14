@@ -1,6 +1,5 @@
 from langchain_groq import ChatGroq
 import os
-import re
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,11 +7,15 @@ logger = logging.getLogger(__name__)
 class RelevanceChecker:
     def __init__(self):
         # Initialize Groq LLM
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError("GROQ_API_KEY environment variable is not set")
+        
         self.llm = ChatGroq(
             model_name="llama-3.1-8b-instant",
             temperature=0,
             max_tokens=10,
-            groq_api_key=os.getenv("GROQ_API_KEY"),
+            groq_api_key=api_key,
         )
 
     def check(self, question: str, retriever, k=3) -> str:
@@ -27,7 +30,12 @@ class RelevanceChecker:
         logger.debug(f"RelevanceChecker.check called with question='{question}' and k={k}")
 
         # Retrieve doc chunks from the ensemble retriever
-        top_docs = retriever.invoke(question)
+        try:
+            top_docs = retriever.invoke(question)
+        except Exception as e:
+            logger.error(f"Error retrieving documents: {e}")
+            return "NO_MATCH"
+        
         if not top_docs:
             logger.debug("No documents returned from retriever.invoke(). Classifying as NO_MATCH.")
             return "NO_MATCH"

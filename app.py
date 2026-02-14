@@ -71,11 +71,10 @@ if question:
     retriever = LlamaIndexHybridRetriever()
     workflow = AgentWorkflow()
 
-    # 🔥 POSITONAL ARGUMENTS (IMPORTANT)
+    # 🔥 FIXED: Only pass question and retriever (2 arguments)
     result = workflow.full_pipeline(
         question,
-        retriever,
-        st.session_state.chat_history
+        retriever
     )
 
     # Save chat in NEW SAFE FORMAT
