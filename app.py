@@ -13,10 +13,28 @@ st.set_page_config(page_title="Multi-Agentic RAG", layout="wide")
 st.title("📚 Multi-Agentic RAG Chatbot")
 
 # -------------------------
+# Settings Sidebar
+# -------------------------
+with st.sidebar:
+    st.header("⚙️ Settings")
+    enable_verification = st.checkbox(
+        "Enable Verification", 
+        value=False,
+        help="🐌 Slower but validates answer accuracy. ⚡ Disable for 3x faster responses."
+    )
+    st.info(
+        "⚡ **Fast Mode (Default)**: ~2-3 seconds\n\n"
+        "🔍 **Verification Mode**: ~6-10 seconds but checks answer quality"
+    )
+
+# -------------------------
 # Session State
 # -------------------------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+
+if "retriever" not in st.session_state:
+    st.session_state.retriever = None
 
 # -------------------------
 # PDF Upload Section
@@ -37,6 +55,9 @@ if uploaded_files:
 
     with st.spinner("Indexing PDFs..."):
         ingest_pdfs()
+    
+    # Reset retriever cache after new upload
+    st.session_state.retriever = None
 
     st.success("✅ PDFs indexed successfully!")
 
@@ -73,14 +94,21 @@ if question:
         st.warning("⚠️ Please upload and index PDFs first.")
         st.stop()
 
-    retriever = LlamaIndexHybridRetriever()
-    workflow = AgentWorkflow()
+    # Initialize retriever only once (cache in session state)
+    if st.session_state.retriever is None:
+        with st.spinner("Loading retriever..."):
+            st.session_state.retriever = LlamaIndexHybridRetriever()
+    
+    retriever = st.session_state.retriever
+    workflow = AgentWorkflow(enable_verification=enable_verification)
 
-    # 🔥 FIXED: Only pass question and retriever (2 arguments)
-    result = workflow.full_pipeline(
-        question,
-        retriever
-    )
+    # Show processing message
+    with st.spinner("🤔 Thinking..." if not enable_verification else "🤔 Thinking and verifying..."):
+        # 🔥 FIXED: Only pass question and retriever (2 arguments)
+        result = workflow.full_pipeline(
+            question,
+            retriever
+        )
 
     # Save chat in NEW SAFE FORMAT
     st.session_state.chat_history.append({

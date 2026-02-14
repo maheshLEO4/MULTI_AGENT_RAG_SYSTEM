@@ -37,8 +37,8 @@ def ingest_pdfs():
 
         # Split documents into chunks
         splitter = SentenceSplitter(
-            chunk_size=512,
-            chunk_overlap=50
+            chunk_size=256,  # Reduced from 512 for faster processing
+            chunk_overlap=25  # Reduced from 50
         )
 
         nodes = splitter.get_nodes_from_documents(docs)

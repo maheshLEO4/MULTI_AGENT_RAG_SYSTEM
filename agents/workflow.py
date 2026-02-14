@@ -22,16 +22,32 @@ class AgentState(TypedDict):
     is_relevant: bool
     retriever: Any  # Custom hybrid retriever
     iteration_count: int  # Track iterations to prevent infinite loops
+    enable_verification: bool  # Toggle verification for speed
 
 
 # ---------------------------
 # Workflow Class
 # ---------------------------
 class AgentWorkflow:
-    def __init__(self):
+    def __init__(self, enable_verification: bool = False):
+        """
+        Initialize workflow.
+        
+        Args:
+            enable_verification: If True, runs verification (slower but more accurate).
+                               If False, skips verification (faster).
+        """
         self.researcher = ResearchAgent()
-        self.verifier = VerificationAgent()
-        self.relevance_checker = RelevanceChecker()
+        self.enable_verification = enable_verification
+        
+        # Only initialize verification components if needed
+        if enable_verification:
+            self.verifier = VerificationAgent()
+            self.relevance_checker = RelevanceChecker()
+        else:
+            self.verifier = None
+            self.relevance_checker = None
+            
         self.compiled_workflow = self._build_workflow()
 
     # ---------------------------
@@ -40,31 +56,38 @@ class AgentWorkflow:
     def _build_workflow(self):
         workflow = StateGraph(AgentState)
 
-        workflow.add_node("check_relevance", self._check_relevance_step)
-        workflow.add_node("research", self._research_step)
-        workflow.add_node("verify", self._verification_step)
+        if self.enable_verification:
+            # Full workflow with verification
+            workflow.add_node("check_relevance", self._check_relevance_step)
+            workflow.add_node("research", self._research_step)
+            workflow.add_node("verify", self._verification_step)
 
-        workflow.set_entry_point("check_relevance")
+            workflow.set_entry_point("check_relevance")
 
-        workflow.add_conditional_edges(
-            "check_relevance",
-            self._decide_after_relevance_check,
-            {
-                "relevant": "research",
-                "irrelevant": END
-            }
-        )
+            workflow.add_conditional_edges(
+                "check_relevance",
+                self._decide_after_relevance_check,
+                {
+                    "relevant": "research",
+                    "irrelevant": END
+                }
+            )
 
-        workflow.add_edge("research", "verify")
+            workflow.add_edge("research", "verify")
 
-        workflow.add_conditional_edges(
-            "verify",
-            self._decide_next_step,
-            {
-                "re_research": "research",
-                "end": END
-            }
-        )
+            workflow.add_conditional_edges(
+                "verify",
+                self._decide_next_step,
+                {
+                    "re_research": "research",
+                    "end": END
+                }
+            )
+        else:
+            # Fast workflow - skip verification
+            workflow.add_node("research", self._research_step)
+            workflow.set_entry_point("research")
+            workflow.add_edge("research", END)
 
         return workflow.compile()
 
@@ -129,10 +152,11 @@ class AgentWorkflow:
                 "question": question,
                 "documents": documents,
                 "draft_answer": "",
-                "verification_report": "",
-                "is_relevant": False,
+                "verification_report": "⚡ Verification disabled for faster responses" if not self.enable_verification else "",
+                "is_relevant": True,  # Skip check if verification disabled
                 "retriever": retriever,
-                "iteration_count": 0
+                "iteration_count": 0,
+                "enable_verification": self.enable_verification
             }
 
             try:

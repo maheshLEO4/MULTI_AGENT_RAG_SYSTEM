@@ -16,6 +16,7 @@ class ResearchAgent:
         self.llm = ChatGroq(
             model_name="llama-3.1-8b-instant",
             temperature=0.1,
+            max_tokens=512,  # Limit for faster responses
             groq_api_key=api_key,
         )
         print("LLM initialized successfully.")
