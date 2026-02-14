@@ -1,10 +1,7 @@
 import os
-from llama_index.core import load_index_from_storage, StorageContext
-from llama_index.core.retrievers import (
-    VectorIndexRetriever,
-    KeywordTableSimpleRetriever,
-    QueryFusionRetriever
-)
+from llama_index.core import StorageContext, load_index_from_storage
+from llama_index.core.retrievers import VectorIndexRetriever, BM25Retriever
+from llama_index.core.retrievers.fusion_retriever import QueryFusionRetriever
 from langchain_core.documents import Document
 from config import INDEX_DIR, TOP_K
 
@@ -12,24 +9,23 @@ from config import INDEX_DIR, TOP_K
 class LlamaIndexHybridRetriever:
     def __init__(self):
         if not os.path.exists(INDEX_DIR) or not os.listdir(INDEX_DIR):
-            raise RuntimeError(
-                "No index found. Please upload PDFs first."
-            )
+            raise RuntimeError("No index found. Upload PDFs first.")
 
         storage = StorageContext.from_defaults(persist_dir=INDEX_DIR)
-
-        vector_index = load_index_from_storage(storage)
-        keyword_index = load_index_from_storage(storage)
+        index = load_index_from_storage(storage)
 
         vector = VectorIndexRetriever(
-            index=vector_index,
+            index=index,
             similarity_top_k=TOP_K
         )
 
-        keyword = KeywordTableSimpleRetriever(index=keyword_index)
+        bm25 = BM25Retriever.from_defaults(
+            index=index,
+            similarity_top_k=TOP_K
+        )
 
         self.retriever = QueryFusionRetriever(
-            retrievers=[vector, keyword],
+            retrievers=[vector, bm25],
             similarity_top_k=TOP_K,
             num_queries=1
         )
