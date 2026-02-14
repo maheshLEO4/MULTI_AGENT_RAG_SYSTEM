@@ -49,6 +49,11 @@ for msg in st.session_state.chat_history:
         if "user" in msg and "assistant" in msg:
             st.chat_message("user").write(msg["user"])
             st.chat_message("assistant").write(msg["assistant"])
+            
+            # Display verification report if available
+            if "verification" in msg and msg["verification"]:
+                with st.expander("🔍 Verification Report", expanded=False):
+                    st.markdown(msg["verification"])
 
         # Old / fallback format
         elif msg.get("role") == "user":
@@ -80,9 +85,16 @@ if question:
     # Save chat in NEW SAFE FORMAT
     st.session_state.chat_history.append({
         "user": question,
-        "assistant": result.get("draft_answer", "")
+        "assistant": result.get("draft_answer", ""),
+        "verification": result.get("verification_report", "")
     })
 
     # Display current turn
     st.chat_message("user").write(question)
     st.chat_message("assistant").write(result.get("draft_answer", ""))
+    
+    # Display verification report if available
+    verification_report = result.get("verification_report", "")
+    if verification_report:
+        with st.expander("🔍 Verification Report", expanded=False):
+            st.markdown(verification_report)
