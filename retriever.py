@@ -1,3 +1,4 @@
+import os
 from llama_index.core import load_index_from_storage, StorageContext
 from llama_index.core.retrievers import (
     VectorIndexRetriever,
@@ -10,6 +11,11 @@ from config import INDEX_DIR, TOP_K
 
 class LlamaIndexHybridRetriever:
     def __init__(self):
+        if not os.path.exists(INDEX_DIR) or not os.listdir(INDEX_DIR):
+            raise RuntimeError(
+                "No index found. Please upload PDFs first."
+            )
+
         storage = StorageContext.from_defaults(persist_dir=INDEX_DIR)
 
         vector_index = load_index_from_storage(storage)
