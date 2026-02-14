@@ -19,7 +19,7 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 # -------------------------
-# PDF Upload
+# PDF Upload Section
 # -------------------------
 uploaded_files = st.file_uploader(
     "Upload PDF documents",
@@ -31,8 +31,8 @@ if uploaded_files:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     for file in uploaded_files:
-        path = os.path.join(UPLOAD_DIR, file.name)
-        with open(path, "wb") as f:
+        file_path = os.path.join(UPLOAD_DIR, file.name)
+        with open(file_path, "wb") as f:
             f.write(file.getbuffer())
 
     with st.spinner("Indexing PDFs..."):
@@ -41,11 +41,21 @@ if uploaded_files:
     st.success("✅ PDFs indexed successfully!")
 
 # -------------------------
-# Chat History Display
+# Chat History Display (SAFE)
 # -------------------------
 for msg in st.session_state.chat_history:
-    st.chat_message("user").write(msg["user"])
-    st.chat_message("assistant").write(msg["assistant"])
+    if isinstance(msg, dict):
+        # New format
+        if "user" in msg and "assistant" in msg:
+            st.chat_message("user").write(msg["user"])
+            st.chat_message("assistant").write(msg["assistant"])
+
+        # Old / fallback format
+        elif msg.get("role") == "user":
+            st.chat_message("user").write(msg.get("content", ""))
+
+        elif msg.get("role") == "assistant":
+            st.chat_message("assistant").write(msg.get("content", ""))
 
 # -------------------------
 # Chat Input
@@ -53,27 +63,27 @@ for msg in st.session_state.chat_history:
 question = st.chat_input("Ask a question about the uploaded PDFs")
 
 if question:
-    # Safety check
+    # Guard: index must exist
     if not os.path.exists(INDEX_DIR) or not os.listdir(INDEX_DIR):
-        st.warning("⚠️ Upload and index PDFs first.")
+        st.warning("⚠️ Please upload and index PDFs first.")
         st.stop()
 
     retriever = LlamaIndexHybridRetriever()
     workflow = AgentWorkflow()
 
-    # 🔥 FIX: positional arguments ONLY
+    # 🔥 POSITONAL ARGUMENTS (IMPORTANT)
     result = workflow.full_pipeline(
         question,
         retriever,
         st.session_state.chat_history
     )
 
-    # Save chat
+    # Save chat in NEW SAFE FORMAT
     st.session_state.chat_history.append({
         "user": question,
-        "assistant": result["draft_answer"]
+        "assistant": result.get("draft_answer", "")
     })
 
-    # Display
+    # Display current turn
     st.chat_message("user").write(question)
-    st.chat_message("assistant").write(result["draft_answer"])
+    st.chat_message("assistant").write(result.get("draft_answer", ""))
