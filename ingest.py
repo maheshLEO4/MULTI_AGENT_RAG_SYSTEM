@@ -8,7 +8,6 @@ from llama_index.core import (
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from config import UPLOAD_DIR, INDEX_DIR, EMBED_MODEL, BATCH_SIZE, CHUNK_SIZE, CHUNK_OVERLAP
-import streamlit as st
 
 
 def ingest_pdfs(progress_callback=None):
@@ -17,7 +16,8 @@ def ingest_pdfs(progress_callback=None):
     Optimized for large files with batching and progress tracking.
     
     Args:
-        progress_callback: Optional callback function to report progress
+        progress_callback: Optional callback function to report progress.
+                          Should accept (progress: float, message: str)
     """
     try:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -61,9 +61,7 @@ def ingest_pdfs(progress_callback=None):
         if progress_callback:
             progress_callback(0.5, f"Created {total_nodes} chunks. Building vector index...")
 
-        # For large files, process in batches
-        BATCH_SIZE = 1000  # Process 1000 nodes at a time
-        
+        # For large files, process in batches (using BATCH_SIZE from config)
         if total_nodes <= BATCH_SIZE:
             # Small dataset - process all at once
             index = VectorStoreIndex(nodes)
