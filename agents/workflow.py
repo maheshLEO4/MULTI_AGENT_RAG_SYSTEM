@@ -8,6 +8,7 @@ from .verification_agent import VerificationAgent
 from .relevance_checker import RelevanceChecker
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 # ---------------------------
@@ -19,7 +20,7 @@ class AgentState(TypedDict):
     draft_answer: str
     verification_report: str
     is_relevant: bool
-    retriever: Any  # 🔥 Generic to support custom hybrid retrievers
+    retriever: Any  # 🔥 Custom hybrid retriever
 
 
 # ---------------------------
@@ -30,12 +31,12 @@ class AgentWorkflow:
         self.researcher = ResearchAgent()
         self.verifier = VerificationAgent()
         self.relevance_checker = RelevanceChecker()
-        self.compiled_workflow = self.build_workflow()
+        self.compiled_workflow = self._build_workflow()
 
     # ---------------------------
     # Build LangGraph Workflow
     # ---------------------------
-    def build_workflow(self):
+    def _build_workflow(self):
         workflow = StateGraph(AgentState)
 
         workflow.add_node("check_relevance", self._check_relevance_step)
@@ -67,13 +68,16 @@ class AgentWorkflow:
         return workflow.compile()
 
     # ---------------------------
-    # Relevance Check
+    # Relevance Check Step
     # ---------------------------
     def _check_relevance_step(self, state: AgentState) -> Dict:
         retriever = state["retriever"]
+        question = state["question"]
+
+        logger.info("Checking question relevance")
 
         classification = self.relevance_checker.check(
-            question=state["question"],
+            question=question,
             retriever=retriever,
             k=20
         )
@@ -84,24 +88,24 @@ class AgentWorkflow:
         return {
             "is_relevant": False,
             "draft_answer": (
-                "This question is not related to the uploaded document(s), "
+                "❌ The question is not related to the uploaded documents "
                 "or there is insufficient information to answer it."
             )
         }
 
     def _decide_after_relevance_check(self, state: AgentState) -> str:
         decision = "relevant" if state["is_relevant"] else "irrelevant"
-        logger.debug(f"Relevance decision: {decision}")
+        logger.info(f"Relevance decision: {decision}")
         return decision
 
     # ---------------------------
-    # Full Pipeline Entry
+    # Public Pipeline Entry
     # ---------------------------
-    def full_pipeline(self, question: str, retriever: Any):
+    def full_pipeline(self, question: str, retriever: Any) -> Dict[str, str]:
         try:
-            logger.info(f"Running pipeline for question: {question}")
+            logger.info(f"Starting workflow for question: {question}")
 
-            # 🔥 Always use invoke() (LangChain 1.x standard)
+            # 🔥 Always use invoke() (LangChain standard)
             documents = retriever.invoke(question)
 
             logger.info(f"Retrieved {len(documents)} documents")
@@ -123,40 +127,48 @@ class AgentWorkflow:
             }
 
         except Exception as e:
-            logger.exception("Workflow execution failed")
-            raise e
+            logger.exception("❌ Workflow execution failed")
+            raise RuntimeError(f"Workflow failed: {e}")
 
     # ---------------------------
     # Research Step
     # ---------------------------
     def _research_step(self, state: AgentState) -> Dict:
-        logger.debug("Entering research step")
+        logger.info("Running research agent")
+
         result = self.researcher.generate(
             question=state["question"],
             documents=state["documents"]
         )
-        return {"draft_answer": result["draft_answer"]}
+
+        return {
+            "draft_answer": result.get("draft_answer", "")
+        }
 
     # ---------------------------
     # Verification Step
     # ---------------------------
     def _verification_step(self, state: AgentState) -> Dict:
-        logger.debug("Entering verification step")
+        logger.info("Running verification agent")
+
         result = self.verifier.check(
             answer=state["draft_answer"],
             documents=state["documents"]
         )
-        return {"verification_report": result["verification_report"]}
+
+        return {
+            "verification_report": result.get("verification_report", "")
+        }
 
     # ---------------------------
     # Decide Loop or End
     # ---------------------------
     def _decide_next_step(self, state: AgentState) -> str:
-        report = state["verification_report"]
+        report = state.get("verification_report", "")
 
         if "Supported: NO" in report or "Relevant: NO" in report:
-            logger.info("Verification failed → re-research")
+            logger.info("Verification failed → re-running research")
             return "re_research"
 
-        logger.info("Verification successful → end workflow")
+        logger.info("Verification successful → ending workflow")
         return "end"

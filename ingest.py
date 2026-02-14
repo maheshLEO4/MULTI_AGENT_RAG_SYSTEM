@@ -2,7 +2,6 @@ import os
 from llama_index.core import (
     SimpleDirectoryReader,
     VectorStoreIndex,
-    StorageContext,
     Settings
 )
 from llama_index.core.node_parser import SentenceSplitter
@@ -14,10 +13,8 @@ def ingest_pdfs():
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     os.makedirs(INDEX_DIR, exist_ok=True)
 
-    # 🔒 Disable LLM completely
+    # 🔒 Disable OpenAI completely
     Settings.llm = None
-
-    # 🔒 Force local embeddings (no OpenAI)
     Settings.embed_model = HuggingFaceEmbedding(
         model_name=EMBED_MODEL
     )
@@ -34,6 +31,7 @@ def ingest_pdfs():
         chunk_size=512,
         chunk_overlap=50
     )
+
     nodes = splitter.get_nodes_from_documents(docs)
 
     index = VectorStoreIndex(nodes)
