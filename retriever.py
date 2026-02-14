@@ -1,5 +1,9 @@
 import os
-from llama_index.core import StorageContext, load_index_from_storage, Settings
+from llama_index.core import (
+    StorageContext,
+    load_index_from_storage,
+    Settings
+)
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.retrievers.fusion_retriever import QueryFusionRetriever
@@ -13,7 +17,10 @@ class LlamaIndexHybridRetriever:
         if not os.path.exists(INDEX_DIR) or not os.listdir(INDEX_DIR):
             raise RuntimeError("No index found. Upload PDFs first.")
 
-        # 🔒 Ensure same embedding model at query time
+        # 🔒 Disable LLM globally (THIS FIXES THE ERROR)
+        Settings.llm = None
+
+        # 🔒 Ensure same embedding model
         Settings.embed_model = HuggingFaceEmbedding(
             model_name=EMBED_MODEL
         )

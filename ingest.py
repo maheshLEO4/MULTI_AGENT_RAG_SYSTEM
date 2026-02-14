@@ -14,7 +14,10 @@ def ingest_pdfs():
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     os.makedirs(INDEX_DIR, exist_ok=True)
 
-    # 🔒 Explicitly set embedding model (prevents OpenAI fallback)
+    # 🔒 Disable LLM completely
+    Settings.llm = None
+
+    # 🔒 Force local embeddings (no OpenAI)
     Settings.embed_model = HuggingFaceEmbedding(
         model_name=EMBED_MODEL
     )
@@ -33,6 +36,5 @@ def ingest_pdfs():
     )
     nodes = splitter.get_nodes_from_documents(docs)
 
-    vector_index = VectorStoreIndex(nodes)
-
-    vector_index.storage_context.persist(persist_dir=INDEX_DIR)
+    index = VectorStoreIndex(nodes)
+    index.storage_context.persist(persist_dir=INDEX_DIR)
